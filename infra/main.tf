@@ -22,7 +22,7 @@ module "container_app" {
   name_prefix           = local.name_prefix
   aws_region            = var.aws_region
   vpc_id                = module.network.vpc_id
-  private_subnet_ids    = [module.network.private_isolated_subnet_id]
+  private_subnet_ids    = [module.network.private_egress_subnet_id]
   app_security_group_id = module.network.app_sg_id
   container_image_uri   = var.container_image_uri
 }
