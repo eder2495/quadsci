@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euxo pipefail
+
+HOME_DIR="${home_mount}"
+TARGET_USER="${home_user}"
+
+dnf update -y
+dnf install -y git docker jq ripgrep htop tmux python3-pip
+
+systemctl enable --now docker
+usermod -aG docker "$TARGET_USER" || true
+
+ROOT_DEV=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//; s/p[0-9]*$//')
+DATA_DEV=""
+for dev in /dev/nvme1n1 /dev/xvdf /dev/sdf; do
+  if [ -e "$dev" ] && [ "$dev" != "$ROOT_DEV" ]; then
+    DATA_DEV="$dev"
+    break
+  fi
+done
+
+if [ -n "$DATA_DEV" ]; then
+  if ! blkid "$DATA_DEV" >/dev/null 2>&1; then
+    mkfs.xfs -f "$DATA_DEV"
+  fi
+
+  UUID=$(blkid -s UUID -o value "$DATA_DEV")
+  mkdir -p /mnt/home_temp "$HOME_DIR"
+  mount -o defaults,noatime "$DATA_DEV" /mnt/home_temp
+
+  if [ -z "$(ls -A /mnt/home_temp)" ] && [ -d "$HOME_DIR" ]; then
+    cp -a "$HOME_DIR/." /mnt/home_temp/ || true
+  fi
+
+  umount /mnt/home_temp
+  rmdir /mnt/home_temp
+
+  if ! grep -q "$UUID" /etc/fstab; then
+    echo "UUID=$UUID $HOME_DIR xfs defaults,noatime 0 2" >> /etc/fstab
+  fi
+
+  mount -a
+  chown -R "$TARGET_USER:$TARGET_USER" "$HOME_DIR"
+fi
+
+cat <<'EOF' > "$HOME_DIR/.gitconfig"
+[init]
+	defaultBranch = main
+[core]
+	editor = vim
+EOF
+chown "$TARGET_USER:$TARGET_USER" "$HOME_DIR/.gitconfig"
